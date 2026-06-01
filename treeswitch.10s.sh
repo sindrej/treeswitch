@@ -19,7 +19,7 @@
 #
 #   - Run with no args  -> render the menu bar dropdown.
 #   - Run with an action -> perform it (start / stop / stopall / restart /
-#     resetmain / prsync / openlog / watch).
+#     resetmain / prsync / openlog / watch / addrepo).
 #
 # SwiftBar runs this file on its refresh interval to draw the menu, and runs it
 # again (with params) when you click an item.
@@ -49,6 +49,24 @@ notify() { osascript -e "display notification \"$1\" with title \"treeswitch\"" 
 # yes/no dialog — returns 0 only if the user clicks OK
 confirm() {
   osascript -e "display dialog \"$1\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1
+}
+
+# escape a string for safe embedding inside an AppleScript double-quoted literal
+_osa() { local s="${1//\\/\\\\}"; print -r -- "${s//\"/\\\"}" }
+# escape a string for safe embedding inside a zsh double-quoted config value
+_zq()  { local s="${1//\\/\\\\}"; print -r -- "${s//\"/\\\"}" }
+
+# native text prompt — prints what the user typed; non-zero exit if they cancel
+ask_text() {
+  osascript -e "text returned of (display dialog \"$(_osa "$1")\" default answer \"$(_osa "$2")\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with title \"treeswitch\")" 2>/dev/null
+}
+# native Finder folder picker — prints the chosen POSIX path; non-zero if cancelled
+ask_folder() {
+  osascript -e 'POSIX path of (choose folder with prompt "Select the git repository folder")' 2>/dev/null
+}
+# native alert (used for validation errors)
+alert() {
+  osascript -e "display alert \"$(_osa "$1")\" message \"$(_osa "$2")\"" >/dev/null 2>&1
 }
 
 # short git hint for a worktree: " ●" if dirty, " ↑n ↓n" vs upstream
@@ -244,6 +262,78 @@ do_openlog() {
   exec tail -n 300 -F "$log"
 }
 
+# create an empty, well-formed config the first time we need one
+ensure_config() {
+  [[ -f "$CONF" ]] && return 0
+  mkdir -p "$DATA"
+  cat > "$CONF" <<'EOF'
+# treeswitch configuration.
+# Managed by the menu's "Add repo…" item — you can also edit it by hand.
+
+typeset -gA LABEL REPO PORT CMD WORKDIR NPM_INSTALL OPEN_URL
+typeset -ga REPO_KEYS
+
+# Confirm before killing a running server (0 = off, 1 = on).
+CONFIRM_KILL=0
+# Show GitHub PR numbers next to worktree branches (needs `gh`; 0 = off, 1 = on).
+SHOW_PRS=1
+EOF
+}
+
+# visual "Add a repo" wizard: native folder picker + a few prompts, then append
+# a repo block to the config. No file editing required.
+do_addrepo() {
+  local folder label port cmd key url npmi n=2
+
+  folder="$(ask_folder)" || return 0
+  folder="${folder%/}"
+  [[ -n "$folder" ]] || return 0
+  if ! git -C "$folder" rev-parse --git-dir >/dev/null 2>&1; then
+    alert "Not a git repository" "$folder doesn't look like a git repo — pick the folder that contains its .git."
+    return 1
+  fi
+
+  label="$(ask_text "Name for this repo (shown in the menu):" "${folder:t}")" || return 0
+  [[ -n "$label" ]] || return 0
+  port="$(ask_text "Dev-server port to manage (e.g. 4200):" "")" || return 0
+  if [[ "$port" != <-> ]]; then
+    alert "Invalid port" "\"$port\" isn't a number."
+    return 1
+  fi
+  cmd="$(ask_text "Command that starts the dev server:" "npm start")" || return 0
+  [[ -n "$cmd" ]] || return 0
+
+  ensure_config
+
+  # derive a unique array key (slug) from the label
+  key="${label:l}"; key="${key//[^a-z0-9]/-}"
+  while [[ "$key" == *--* ]]; do key="${key//--/-}"; done
+  key="${key#-}"; key="${key%-}"; [[ -n "$key" ]] || key="repo"
+  if [[ -n "${REPO[$key]}" ]]; then
+    while [[ -n "${REPO[${key}${n}]}" ]]; do (( n++ )); done
+    key="${key}${n}"
+  fi
+
+  npmi=0
+  case "$cmd" in npm*|npx*|yarn*|pnpm*|"ng "*) npmi=1 ;; esac
+  url="http://localhost:$port"
+
+  {
+    print -r -- ""
+    print -r -- "# --- ${label} ---"
+    print -r -- "REPO_KEYS+=($key)"
+    print -r -- "LABEL[$key]=\"$(_zq "$label")\""
+    print -r -- "REPO[$key]=\"$(_zq "$folder")\""
+    print -r -- "PORT[$key]=$port"
+    print -r -- "CMD[$key]=\"$(_zq "$cmd")\""
+    print -r -- "WORKDIR[$key]=\".\""
+    print -r -- "NPM_INSTALL[$key]=$npmi"
+    print -r -- "OPEN_URL[$key]=\"$url\""
+  } >> "$CONF"
+
+  notify "Added \"$label\" — open the menu and pick a worktree to start it."
+}
+
 # ---------------------------------------------------------------------------
 # menu rendering
 # ---------------------------------------------------------------------------
@@ -258,9 +348,12 @@ render_menu() {
   fi
   print -r -- "---"
 
-  if [[ -z "$REPO_KEYS" ]]; then
-    print -r -- "No config found | color=red"
-    print -r -- "Expected: $CONF"
+  if (( ${#REPO_KEYS} == 0 )); then
+    print -r -- "Welcome to treeswitch 🌳 | color=orange"
+    print -r -- "No repos configured yet."
+    print -r -- "➕ Add your first repo… | bash=\"$SELF\" param1=addrepo terminal=false refresh=true"
+    print -r -- "---"
+    print -r -- "How it works | href=https://github.com/sindrej/treeswitch"
     return
   fi
 
@@ -320,6 +413,7 @@ render_menu() {
   print -r -- "---"
   (( rcount > 0 )) && \
     print -r -- "Stop all | bash=\"$SELF\" param1=stopall terminal=false refresh=true color=red"
+  print -r -- "➕ Add repo… | bash=\"$SELF\" param1=addrepo terminal=false refresh=true"
   print -r -- "Refresh | refresh=true"
   print -r -- "Edit config | bash=/usr/bin/open param1=-t param2=\"$CONF\" terminal=false"
 }
@@ -332,7 +426,7 @@ render_menu() {
 action=""; key=""; wt=""
 for a in "$@"; do
   if [[ -z "$action" ]]; then
-    case "$a" in start|stop|stopall|restart|resetmain|openlog|watch|prsync) action="$a" ;; esac
+    case "$a" in start|stop|stopall|restart|resetmain|openlog|watch|prsync|addrepo) action="$a" ;; esac
     continue
   fi
   if   [[ -z "$key" ]]; then key="$a"
@@ -349,5 +443,6 @@ case "$action" in
   prsync)  do_prsync ;;
   openlog) do_openlog "$key" ;;
   watch)   do_watch "$key" ;;
+  addrepo) do_addrepo ;;
   *)       render_menu ;;
 esac

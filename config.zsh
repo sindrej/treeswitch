@@ -1,8 +1,9 @@
 # treeswitch configuration  (example)
 #
 # On first install this is copied to ~/.treeswitch/config.zsh — edit THAT copy
-# (the menu's "Edit config" item opens it). Add a repo by appending its key to
-# REPO_KEYS and filling in the matching array entries below.
+# (the menu's "Edit config" item opens it). The easiest way to add a repo is the
+# menu's "➕ Add repo…" item (native folder picker + a couple of prompts). To add
+# one by hand, append its key to REPO_KEYS and fill in the array entries below.
 
 typeset -gA LABEL REPO PORT CMD WORKDIR NPM_INSTALL OPEN_URL
 REPO_KEYS=(frontend backend)
