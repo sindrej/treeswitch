@@ -19,7 +19,7 @@
 #
 #   - Run with no args  -> render the menu bar dropdown.
 #   - Run with an action -> perform it (start / stop / stopall / restart /
-#     resetmain / prsync / openlog / watch / addrepo).
+#     resetmain / prsync / openlog / watch / addrepo / editrepo / removerepo).
 #
 # SwiftBar runs this file on its refresh interval to draw the menu, and runs it
 # again (with params) when you click an item.
@@ -334,6 +334,83 @@ do_addrepo() {
   notify "Added \"$label\" — open the menu and pick a worktree to start it."
 }
 
+# regenerate config.zsh from the in-memory arrays (canonical form). Edit/Remove
+# need to rewrite, not append — so the previous file is saved as config.zsh.bak.
+rewrite_config() {
+  ensure_config
+  cp -f "$CONF" "$CONF.bak" 2>/dev/null
+  local k
+  {
+    print -r -- "# treeswitch configuration."
+    print -r -- "# Managed by the menu's Add / Edit / Remove repo items — you can also edit"
+    print -r -- "# it by hand (the previous version is saved as config.zsh.bak)."
+    print -r -- ""
+    print -r -- "typeset -gA LABEL REPO PORT CMD WORKDIR NPM_INSTALL OPEN_URL"
+    print -r -- "typeset -ga REPO_KEYS"
+    print -r -- ""
+    print -r -- "CONFIRM_KILL=${CONFIRM_KILL:-0}"
+    print -r -- "SHOW_PRS=${SHOW_PRS:-1}"
+    for k in $REPO_KEYS; do
+      print -r -- ""
+      print -r -- "# --- ${LABEL[$k]:-$k} ---"
+      print -r -- "REPO_KEYS+=($k)"
+      print -r -- "LABEL[$k]=\"$(_zq "${LABEL[$k]}")\""
+      print -r -- "REPO[$k]=\"$(_zq "${REPO[$k]}")\""
+      print -r -- "PORT[$k]=${PORT[$k]}"
+      print -r -- "CMD[$k]=\"$(_zq "${CMD[$k]}")\""
+      print -r -- "WORKDIR[$k]=\"$(_zq "${WORKDIR[$k]:-.}")\""
+      print -r -- "NPM_INSTALL[$k]=${NPM_INSTALL[$k]:-0}"
+      print -r -- "OPEN_URL[$k]=\"$(_zq "${OPEN_URL[$k]:-http://localhost:${PORT[$k]}}")\""
+    done
+  } > "$CONF"
+}
+
+# visual "Edit repo" wizard: re-prompt name / port / command, pre-filled with
+# the current values. The key is kept stable (state & cache stay attached).
+do_editrepo() {
+  local key="$1"
+  [[ -n "$key" && -n "${REPO[$key]}" ]] || { alert "Unknown repo" "There's nothing to edit."; return 1 }
+  local label port cmd oldport="${PORT[$key]}" oldurl="${OPEN_URL[$key]}"
+
+  label="$(ask_text "Name for this repo (shown in the menu):" "${LABEL[$key]}")" || return 0
+  [[ -n "$label" ]] || return 0
+  port="$(ask_text "Dev-server port to manage:" "$oldport")" || return 0
+  if [[ "$port" != <-> ]]; then
+    alert "Invalid port" "\"$port\" isn't a number."
+    return 1
+  fi
+  cmd="$(ask_text "Command that starts the dev server:" "${CMD[$key]}")" || return 0
+  [[ -n "$cmd" ]] || return 0
+
+  LABEL[$key]="$label"
+  PORT[$key]="$port"
+  CMD[$key]="$cmd"
+  # if the Open URL was the plain localhost default, follow the port change
+  [[ "$oldurl" == "http://localhost:$oldport" ]] && OPEN_URL[$key]="http://localhost:$port"
+
+  rewrite_config
+  notify "Updated \"$label\"."
+}
+
+# visual "Remove repo": confirm, drop it from the config, tidy its state/cache.
+# The actual git repo, worktrees, and any running server are left untouched.
+do_removerepo() {
+  local key="$1"
+  [[ -n "$key" && -n "${REPO[$key]}" ]] || { alert "Unknown repo" "There's nothing to remove."; return 1 }
+  local label="${LABEL[$key]:-$key}"
+  confirm "Remove \"$label\" from treeswitch?
+
+This only removes it from the menu — your repo, its worktrees, and any running server are left untouched." || return 0
+
+  REPO_KEYS=(${REPO_KEYS:#$key})
+  unset "LABEL[$key]" "REPO[$key]" "PORT[$key]" "CMD[$key]" \
+        "WORKDIR[$key]" "NPM_INSTALL[$key]" "OPEN_URL[$key]"
+
+  rewrite_config
+  rm -f "$STATE/$key.active" "$STATE/$key.pgid" "$DATA/cache/$key.prs"
+  notify "Removed \"$label\"."
+}
+
 # ---------------------------------------------------------------------------
 # menu rendering
 # ---------------------------------------------------------------------------
@@ -408,6 +485,9 @@ render_menu() {
       print -r -- "--Stop server | bash=\"$SELF\" param1=stop param2=${key} terminal=false refresh=true color=red"
     fi
     print -r -- "--Stream log | bash=\"$SELF\" param1=openlog param2=${key} terminal=true"
+    print -r -- "-----"
+    print -r -- "--✎ Edit repo… | bash=\"$SELF\" param1=editrepo param2=${key} terminal=false refresh=true"
+    print -r -- "--✕ Remove repo… | bash=\"$SELF\" param1=removerepo param2=${key} terminal=false refresh=true color=red"
   done
 
   print -r -- "---"
@@ -426,7 +506,7 @@ render_menu() {
 action=""; key=""; wt=""
 for a in "$@"; do
   if [[ -z "$action" ]]; then
-    case "$a" in start|stop|stopall|restart|resetmain|openlog|watch|prsync|addrepo) action="$a" ;; esac
+    case "$a" in start|stop|stopall|restart|resetmain|openlog|watch|prsync|addrepo|editrepo|removerepo) action="$a" ;; esac
     continue
   fi
   if   [[ -z "$key" ]]; then key="$a"
@@ -443,6 +523,8 @@ case "$action" in
   prsync)  do_prsync ;;
   openlog) do_openlog "$key" ;;
   watch)   do_watch "$key" ;;
-  addrepo) do_addrepo ;;
+  addrepo)    do_addrepo ;;
+  editrepo)   do_editrepo "$key" ;;
+  removerepo) do_removerepo "$key" ;;
   *)       render_menu ;;
 esac

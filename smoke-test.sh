@@ -120,5 +120,46 @@ $probe"
 $probe"
 ok "visual add-repo wizard writes a valid config"
 
+# 8) edit wizard — re-prompt pre-filled, rewrite the config, keep a .bak.
+#    Old Open URL was the localhost default, so it should follow the new port.
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  ask_text() {
+    case "\$1" in
+      *ame*) print -r -- "Renamed App" ;;   # Name…
+      *ort*) print -r -- 5555 ;;             # …port…
+      *)     print -r -- "npm run dev" ;;    # command
+    esac
+  }
+  alert() { : }; notify() { : }
+  do_editrepo my-cool-app
+TEST
+probe2="$(zsh -c 'source "$HOME/.treeswitch/config.zsh"
+  print -r -- "L=${LABEL[my-cool-app]}"
+  print -r -- "P=${PORT[my-cool-app]}"
+  print -r -- "U=${OPEN_URL[my-cool-app]}"')"
+[[ "$probe2" == *"L=Renamed App"*            ]] || fail "edit did not update the label
+$probe2"
+[[ "$probe2" == *"P=5555"*                   ]] || fail "edit did not update the port
+$probe2"
+[[ "$probe2" == *"U=http://localhost:5555"*  ]] || fail "edit did not follow the port in Open URL
+$probe2"
+[[ -f "$HOME/.treeswitch/config.zsh.bak"     ]] || fail "edit did not back up the previous config"
+ok "visual edit wizard rewrites config (+ .bak)"
+
+# 9) remove wizard — confirm, drop the repo, tidy its state files.
+touch "$HOME/.treeswitch/state/my-cool-app.active"
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  confirm() { return 0 }          # user clicks "Remove"
+  alert() { : }; notify() { : }
+  do_removerepo my-cool-app
+TEST
+probe3="$(zsh -c 'source "$HOME/.treeswitch/config.zsh"; print -r -- "K=$REPO_KEYS"')"
+[[ "$probe3" != *"my-cool-app"* ]] || fail "remove left the repo in the config
+$probe3"
+[[ ! -f "$HOME/.treeswitch/state/my-cool-app.active" ]] || fail "remove did not clean up state"
+ok "visual remove wizard drops repo + cleans state"
+
 print -r -- ""
 print -r -- "ALL PASSED"
