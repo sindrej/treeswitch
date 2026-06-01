@@ -22,7 +22,10 @@ headless, with output going to a log.
 │   ├─ Open http://localhost:4200
 │   ├─ ↻ Restart current
 │   ├─ Stop server
-│   └─ Stream log
+│   ├─ Stream log
+│   ├─ ─────────
+│   ├─ ✎ Edit repo…           ← same dialogs, pre-filled
+│   └─ ✕ Remove repo…         ← drops it from the menu only
 ├─ Backend (:8000) ○ stopped
 │   ├─    main  —  backend-repo
 │   ├─    codex/integration-tests  —  backend-repo
@@ -31,6 +34,7 @@ headless, with output going to a log.
 │   └─ Stream log
 ├─ ─────────
 ├─ Stop all
+├─ ➕ Add repo…             ← native folder picker + a couple of prompts
 ├─ Refresh
 └─ Edit config
 ```
@@ -115,8 +119,21 @@ rendering, and the action dispatcher without touching your real repos or ports.
 
 ## Configure
 
-Edit `~/.treeswitch/config.zsh` (or use the menu's **Edit config**). Each
-repo is a key in `REPO_KEYS` with matching entries in the arrays:
+**No config file to write by hand.** On first launch the menu shows a
+**➕ Add your first repo…** item; the same **➕ Add repo…** lives in the footer
+afterwards. It opens a native Finder **folder picker** for the repo, then prompts
+for a name, a port, and the start command — and writes the config block for you.
+The repo is validated as a real git checkout before it's added.
+
+Each repo's submenu also has **✎ Edit repo…** (the same prompts, pre-filled) and
+**✕ Remove repo…** (drops it from the menu only — your repo, worktrees, and any
+running server are untouched). Edit/Remove rewrite the config to a canonical form
+and save the previous version as `config.zsh.bak`, so a hand-written layout with
+comments or `$HOME` paths gets normalized on the first edit (nothing is lost).
+
+Prefer editing by hand? Open `~/.treeswitch/config.zsh` (the menu's **Edit
+config** opens it). Each repo is a key in `REPO_KEYS` with matching entries in
+the arrays:
 
 | field         | meaning                                              |
 |---------------|------------------------------------------------------|

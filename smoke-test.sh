@@ -74,5 +74,118 @@ zsh "$PLUGIN" JUNK start demo "$TMP/wt-feature"
 zsh "$PLUGIN" stop demo
 ok "index-agnostic dispatch"
 
+# 6) first-run welcome: with NO config the menu invites you to add a repo
+#    (instead of a dead-end error) and still leaks no shell variables.
+TMP2="$(mktemp -d)"
+export HOME="$TMP2"                 # fresh sandbox, deliberately no config file
+mkdir -p "$HOME/.treeswitch"
+welcome="$(zsh "$PLUGIN")"
+[[ "$welcome" == *"Add your first repo"* ]] || fail "welcome screen missing add-repo invite"
+[[ "$welcome" == *"param1=addrepo"*       ]] || fail "welcome add-repo item not wired to addrepo"
+leaked="$(print -r -- "$welcome" | grep -En '^[A-Za-z_][A-Za-z0-9_]*=' || true)"
+[[ -z "$leaked" ]] || fail "welcome screen leaked shell variables:
+$leaked"
+ok "first-run welcome screen"
+
+# 7) visual "Add repo" wizard logic — stub the native dialogs so NO GUI pops,
+#    then assert it writes a sourceable config block for the new repo.
+GITREPO="$TMP2/myapp"; mkdir -p "$GITREPO"; git -C "$GITREPO" init -q
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1          # defines funcs; renders welcome (discarded)
+  ask_folder() { print -r -- "$GITREPO" }
+  ask_text()   {
+    case "\$1" in
+      *Name*)    print -r -- "My Cool App" ;;
+      *port*)    print -r -- 4321 ;;
+      *Command*) print -r -- "npm run dev" ;;
+    esac
+  }
+  alert()  { : }   # never expect to hit validation
+  notify() { : }
+  do_addrepo
+TEST
+[[ -f "$HOME/.treeswitch/config.zsh" ]] || fail "addrepo did not create a config"
+probe="$(zsh -c 'source "$HOME/.treeswitch/config.zsh"
+  print -r -- "KEYS=$REPO_KEYS"
+  print -r -- "PATH=${REPO[my-cool-app]}"
+  print -r -- "PORT=${PORT[my-cool-app]}"
+  print -r -- "NPMI=${NPM_INSTALL[my-cool-app]}"')"
+[[ "$probe" == *"KEYS=my-cool-app"*   ]] || fail "addrepo did not register the repo key
+$probe"
+[[ "$probe" == *"PATH=$GITREPO"*      ]] || fail "addrepo wrote the wrong repo path
+$probe"
+[[ "$probe" == *"PORT=4321"*          ]] || fail "addrepo wrote the wrong port
+$probe"
+[[ "$probe" == *"NPMI=1"*             ]] || fail "addrepo failed to infer npm install
+$probe"
+ok "visual add-repo wizard writes a valid config"
+
+# 8) edit wizard — re-prompt pre-filled, rewrite the config, keep a .bak.
+#    Old Open URL was the localhost default, so it should follow the new port.
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  ask_text() {
+    case "\$1" in
+      *ame*) print -r -- "Renamed App" ;;   # Name…
+      *ort*) print -r -- 5555 ;;             # …port…
+      *)     print -r -- "npm run dev" ;;    # command
+    esac
+  }
+  alert() { : }; notify() { : }
+  do_editrepo my-cool-app
+TEST
+probe2="$(zsh -c 'source "$HOME/.treeswitch/config.zsh"
+  print -r -- "L=${LABEL[my-cool-app]}"
+  print -r -- "P=${PORT[my-cool-app]}"
+  print -r -- "U=${OPEN_URL[my-cool-app]}"')"
+[[ "$probe2" == *"L=Renamed App"*            ]] || fail "edit did not update the label
+$probe2"
+[[ "$probe2" == *"P=5555"*                   ]] || fail "edit did not update the port
+$probe2"
+[[ "$probe2" == *"U=http://localhost:5555"*  ]] || fail "edit did not follow the port in Open URL
+$probe2"
+[[ -f "$HOME/.treeswitch/config.zsh.bak"     ]] || fail "edit did not back up the previous config"
+ok "visual edit wizard rewrites config (+ .bak)"
+
+# 9) remove wizard — confirm, drop the repo, tidy its state files.
+touch "$HOME/.treeswitch/state/my-cool-app.active"
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  confirm() { return 0 }          # user clicks "Remove"
+  alert() { : }; notify() { : }
+  do_removerepo my-cool-app
+TEST
+probe3="$(zsh -c 'source "$HOME/.treeswitch/config.zsh"; print -r -- "K=$REPO_KEYS"')"
+[[ "$probe3" != *"my-cool-app"* ]] || fail "remove left the repo in the config
+$probe3"
+[[ ! -f "$HOME/.treeswitch/state/my-cool-app.active" ]] || fail "remove did not clean up state"
+ok "visual remove wizard drops repo + cleans state"
+
+# 10) the osascript dialogs must build VALID AppleScript even when the message
+#     carries double-quotes and newlines (the Remove "nothing happens" bug:
+#     confirm() embedded an unescaped quoted label -> osascript syntax error,
+#     silenced by 2>/dev/null). Capture the program confirm() would run and
+#     compile-check it (display dialog -> return, so no GUI pops).
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  osascript() {            # shadow only inside this subshell: record the -e program
+    local want=0 a
+    for a in "\$@"; do
+      [[ \$want == 1 ]] && { print -r -- "\$a" > "\$HOME/confirm.prog"; return 0 }
+      [[ "\$a" == "-e" ]] && want=1
+    done
+    return 0
+  }
+  confirm 'Remove "Frontend" from treeswitch?
+
+A second line, also with a "quoted" word.'
+TEST
+prog="$(cat "$HOME/confirm.prog")"
+# osacompile validates syntax without executing — so a real dialog never pops.
+command osacompile -o "$HOME/confirm.scpt" -e "$prog" >/dev/null 2>&1 \
+  || fail "confirm() builds invalid AppleScript (unescaped quote/newline):
+$prog"
+ok "confirm() builds valid AppleScript with quotes + newlines"
+
 print -r -- ""
 print -r -- "ALL PASSED"
