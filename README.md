@@ -1,5 +1,9 @@
 # treeswitch
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="treeswitch menu" width="256">
+</p>
+
 A macOS menu bar tool (SwiftBar plugin) for switching your local dev
 environment between git worktrees. One icon, with a submenu per repo you
 configure (for example a **Frontend** on `:4200` and a **Backend** on `:8000`),
