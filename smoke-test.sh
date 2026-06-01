@@ -17,6 +17,7 @@ zsh -n "$PLUGIN" && ok "syntax"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP"
+export SWIFTBAR=1          # exercise the SwiftBar render path (SF Symbol title)
 mkdir -p "$HOME/.treeswitch/state" "$HOME/.treeswitch/logs"
 
 # TWO repos, so the per-repo render loop iterates more than once — this is what
@@ -186,6 +187,14 @@ command osacompile -o "$HOME/confirm.scpt" -e "$prog" >/dev/null 2>&1 \
   || fail "confirm() builds invalid AppleScript (unescaped quote/newline):
 $prog"
 ok "confirm() builds valid AppleScript with quotes + newlines"
+
+# 11) cross-host title: without $SWIFTBAR (i.e. xbar or any other host) the
+#     menu-bar title must fall back to a visible text glyph, not a blank line
+#     that relies on the SwiftBar-only `sfimage`.
+xbar_title="$(env -u SWIFTBAR zsh "$PLUGIN" | head -1)"
+[[ "$xbar_title" == *"⎇"* ]]        || fail "xbar title missing the text glyph: '$xbar_title'"
+[[ "$xbar_title" != *"sfimage="* ]] || fail "xbar title leaked a SwiftBar-only sfimage: '$xbar_title'"
+ok "xbar title falls back to a text glyph"
 
 print -r -- ""
 print -r -- "ALL PASSED"

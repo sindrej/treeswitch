@@ -419,10 +419,21 @@ This only removes it from the menu — your repo, its worktrees, and any running
 render_menu() {
   local rkey rcount=0
   for rkey in $REPO_KEYS; do [[ -n "$(port_pid "${PORT[$rkey]}")" ]] && (( rcount++ )); done
-  if (( rcount > 0 )); then
-    print -r -- "${rcount} | sfimage=arrow.triangle.branch color=#3fb950"
+  # menu-bar title. SwiftBar draws an SF Symbol via `sfimage`; xbar (and any
+  # other host) ignores it, so without a text glyph the icon would render blank.
+  # Gate on $SWIFTBAR so the SwiftBar look is unchanged and xbar still shows "⎇".
+  if [[ -n "$SWIFTBAR" ]]; then
+    if (( rcount > 0 )); then
+      print -r -- "${rcount} | sfimage=arrow.triangle.branch color=#3fb950"
+    else
+      print -r -- "| sfimage=arrow.triangle.branch"
+    fi
   else
-    print -r -- "| sfimage=arrow.triangle.branch"
+    if (( rcount > 0 )); then
+      print -r -- "⎇ ${rcount} | color=#3fb950"
+    else
+      print -r -- "⎇"
+    fi
   fi
   print -r -- "---"
 
