@@ -9,7 +9,6 @@
 # <xbar.dependencies>zsh,git,swiftbar,gh</xbar.dependencies>
 # <xbar.abouturl>https://github.com/sindrej/treeswitch</xbar.abouturl>
 #
-# <swiftbar.hideAbout>true</swiftbar.hideAbout>
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
