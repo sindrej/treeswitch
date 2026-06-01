@@ -161,5 +161,31 @@ $probe3"
 [[ ! -f "$HOME/.treeswitch/state/my-cool-app.active" ]] || fail "remove did not clean up state"
 ok "visual remove wizard drops repo + cleans state"
 
+# 10) the osascript dialogs must build VALID AppleScript even when the message
+#     carries double-quotes and newlines (the Remove "nothing happens" bug:
+#     confirm() embedded an unescaped quoted label -> osascript syntax error,
+#     silenced by 2>/dev/null). Capture the program confirm() would run and
+#     compile-check it (display dialog -> return, so no GUI pops).
+zsh <<TEST
+  source "$PLUGIN" >/dev/null 2>&1
+  osascript() {            # shadow only inside this subshell: record the -e program
+    local want=0 a
+    for a in "\$@"; do
+      [[ \$want == 1 ]] && { print -r -- "\$a" > "\$HOME/confirm.prog"; return 0 }
+      [[ "\$a" == "-e" ]] && want=1
+    done
+    return 0
+  }
+  confirm 'Remove "Frontend" from treeswitch?
+
+A second line, also with a "quoted" word.'
+TEST
+prog="$(cat "$HOME/confirm.prog")"
+# osacompile validates syntax without executing — so a real dialog never pops.
+command osacompile -o "$HOME/confirm.scpt" -e "$prog" >/dev/null 2>&1 \
+  || fail "confirm() builds invalid AppleScript (unescaped quote/newline):
+$prog"
+ok "confirm() builds valid AppleScript with quotes + newlines"
+
 print -r -- ""
 print -r -- "ALL PASSED"

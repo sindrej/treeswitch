@@ -46,13 +46,14 @@ port_pid() { lsof -ti tcp:"$1" -sTCP:LISTEN 2>/dev/null }
 # macOS notification
 notify() { osascript -e "display notification \"$1\" with title \"treeswitch\"" >/dev/null 2>&1 }
 
+# escape a string for safe embedding inside an AppleScript double-quoted literal
+# (also turns real newlines into \n so multi-line messages don't break the parse)
+_osa() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; print -r -- "${s//$'\n'/\\n}" }
+
 # yes/no dialog — returns 0 only if the user clicks OK
 confirm() {
-  osascript -e "display dialog \"$1\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1
+  osascript -e "display dialog \"$(_osa "$1")\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1
 }
-
-# escape a string for safe embedding inside an AppleScript double-quoted literal
-_osa() { local s="${1//\\/\\\\}"; print -r -- "${s//\"/\\\"}" }
 # escape a string for safe embedding inside a zsh double-quoted config value
 _zq()  { local s="${1//\\/\\\\}"; print -r -- "${s//\"/\\\"}" }
 
