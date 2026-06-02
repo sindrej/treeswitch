@@ -75,6 +75,23 @@ zsh "$PLUGIN" JUNK start demo "$TMP/wt-feature"
 zsh "$PLUGIN" stop demo
 ok "index-agnostic dispatch"
 
+# 5b) "Reset to main" switches the PRIMARY checkout (the project folder) to the
+#     default branch — even when no worktree is sitting on it. main lives in the
+#     project folder, not a separate worktree.
+git -C "$REPO" branch -M main 2>/dev/null      # normalize the default branch name
+git -C "$REPO" switch -q -c devwork            # move the primary checkout OFF main
+[[ "$(git -C "$REPO" symbolic-ref --short HEAD)" == "devwork" ]] || fail "setup: primary not on devwork"
+zsh "$PLUGIN" resetmain
+got="$(git -C "$REPO" symbolic-ref --short HEAD)"
+[[ "$got" == "main" ]] || fail "resetmain did not switch the primary checkout back to main (on '$got')"
+# git reports the resolved path (/private/var on macOS); the plugin uses that
+# same form so the menu's ✓ lines up with the rendered worktree rows.
+primary="$(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{print substr($0,10); exit}')"
+[[ "$(cat "$HOME/.treeswitch/state/demo.active" 2>/dev/null)" == "$primary" ]] \
+  || fail "resetmain did not start from the primary checkout"
+zsh "$PLUGIN" stopall                            # clear active so the watchers don't notify
+ok "reset to main switches the primary checkout to the default branch"
+
 # 6) first-run welcome: with NO config the menu invites you to add a repo
 #    (instead of a dead-end error) and still leaks no shell variables.
 TMP2="$(mktemp -d)"

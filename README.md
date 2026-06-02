@@ -13,7 +13,7 @@ headless, with output going to a log.
 
 ```
 ⎇ 2                          ← icon + count of running servers
-├─ ↩ Reset to main           ← one click: both repos back to their main worktree
+├─ ↩ Reset to main           ← one click: every repo's checkout back to its default branch
 ├─ ─────────
 ├─ Frontend (:4200) ● running
 │   ├─ ✓ fix/security #838 ● ↑2  —  frontend-repo   (✓ active · #PR · ● dirty · ↑ahead/↓behind)
@@ -70,10 +70,13 @@ headless, with output going to a log.
     notification fires and the menu shows `⚠ last start may have failed`.
 - **Active ✓** = the worktree recorded in `state/<repo>.active` **and** the port
   is actually in use.
-- **↩ Reset to main** — one click switches *every* repo to the worktree on its
-  default branch (resolved from `origin/HEAD`, falling back to `main`/`master`)
-  and (re)starts it. A repo with no worktree on its main branch is skipped with a
-  notification.
+- **↩ Reset to main** — one click switches *every* repo's **primary checkout**
+  (the project's main folder) to its default branch (resolved from `origin/HEAD`,
+  falling back to `main`/`master`) and (re)starts it. `main` lives in the project
+  folder, not a separate worktree. A repo is skipped with a notification if the
+  default branch can't be resolved, or if the checkout can't switch to it — e.g.
+  uncommitted changes that would conflict, or the default branch is already
+  checked out in another worktree.
 - **PR numbers** — when a worktree's branch has an open GitHub PR, its number
   (e.g. `#838`, or `#838 draft`) is shown next to the branch. Powered by
   `gh pr list` per repo, cached under `cache/<repo>.prs` and refreshed in the
